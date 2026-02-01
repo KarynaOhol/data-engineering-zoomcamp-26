@@ -1,0 +1,89 @@
+id: 04.01_postgres_taxi_queries
+namespace: zoomcamp
+description: Query row counts from taxi data tables
+
+inputs:
+  - id: taxi
+    type: SELECT
+    displayName: Select taxi type
+    values: [yellow, green, all]
+    defaults: yellow
+
+  - id: year
+    type: SELECT
+    displayName: Select year
+    values: ["2019", "2020", "2021", "all"]
+    defaults: "2020"
+
+  - id: month
+    type: SELECT
+    displayName: Select month (optional - leave as 'all' for entire year)
+    values: ["all", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+    defaults: "all"
+
+tasks:
+  - id: if_yellow_taxi
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{inputs.taxi == 'yellow' || inputs.taxi == 'all'}}"
+    then:
+      - id: count_yellow_rows
+        type: io.kestra.plugin.jdbc.postgresql.Query
+        sql: |
+          SELECT 
+            'yellow' as taxi_type,
+            COUNT(*) as row_count
+          FROM public.yellow_tripdata
+          WHERE 
+            {% if inputs.year != 'all' %}
+            EXTRACT(YEAR FROM tpep_pickup_datetime) = {{inputs.year}}
+            {% else %}
+            1=1
+            {% endif %}
+            {% if inputs.month != 'all' %}
+            AND EXTRACT(MONTH FROM tpep_pickup_datetime) = {{inputs.month}}
+            {% endif %}
+        fetch: true
+
+  - id: if_green_taxi
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{inputs.taxi == 'green' || inputs.taxi == 'all'}}"
+    then:
+      - id: count_green_rows
+        type: io.kestra.plugin.jdbc.postgresql.Query
+        sql: |
+          SELECT 
+            'green' as taxi_type,
+            COUNT(*) as row_count
+          FROM public.green_tripdata
+          WHERE 
+            {% if inputs.year != 'all' %}
+            EXTRACT(YEAR FROM lpep_pickup_datetime) = {{inputs.year}}
+            {% else %}
+            1=1
+            {% endif %}
+            {% if inputs.month != 'all' %}
+            AND EXTRACT(MONTH FROM lpep_pickup_datetime) = {{inputs.month}}
+            {% endif %}
+        fetch: true
+
+  - id: display_results
+    type: io.kestra.plugin.scripts.shell.Commands
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    commands:
+      - echo "Query Results:"
+      - |
+        {% if inputs.taxi == 'yellow' || inputs.taxi == 'all' %}
+        echo "Yellow Taxi: {{outputs.count_yellow_rows.rows[0].row_count}} rows"
+        {% endif %}
+      - |
+        {% if inputs.taxi == 'green' || inputs.taxi == 'all' %}
+        echo "Green Taxi: {{outputs.count_green_rows.rows[0].row_count}} rows"
+        {% endif %}
+
+pluginDefaults:
+  - type: io.kestra.plugin.jdbc.postgresql
+    values:
+      url: jdbc:postgresql://pgdatabase:5432/ny_taxi
+      username: root
+      password: root
